@@ -2,27 +2,27 @@
 #No recuerdo esta parte de la actividad xd
 
 #Imagen base node liviana
-FROM node:20-alpine
-
+FROM node:20-alpine AS builder
 #crea Carpeta proyecto
 WORKDIR /app
-
 #Copiando dependencias
 COPY package*.json ./
-
 #Instalando todas las dependencias
-RUN npm install
-
+RUN npm ci
 #Copiamos todo
 COPY . .
+RUN npm run build
+
+#Fase runtime
+FROM nginx:alpine AS runtime
+
+RUN rm -rf /usr/share/nginx/html/* \
+ && rm -f /etc/nginx/conf.d/default.conf
+
+COPY default.conf.template /etc/nginx/templates/default.conf.template
+
+COPY --from=builder /app/dist/casino-frontend/browser/. /usr/share/nginx/html/
 
 #Exponemos el puerto por defecto del `ng serve` o.o
-EXPOSE 4200
-
-#Lanzamos el server de desarrollo
-# --host 0.0.0.0 #Se supone que permite que el puerto sea accesible desde el contenedor
-# --poll 2000 #Fuerza al compilador a detectar cambios en volúmenes
-
-#Comandos ejecutables
-CMD["npm", "run", "start"]
+EXPOSE 80
 
