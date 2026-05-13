@@ -1,7 +1,4 @@
-#Creo que hay que configurar ng server o algo con eso
-#No recuerdo esta parte de la actividad xd
-
-#Imagen base node liviana
+#Imagen base node
 FROM node:20-alpine AS builder
 #crea Carpeta proyecto
 WORKDIR /app
@@ -13,7 +10,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-#Fase runtime
+#Fase runtime, imagen más liviana
 FROM nginx:alpine AS runtime
 
 RUN rm -rf /usr/share/nginx/html/* \
