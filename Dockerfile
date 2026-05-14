@@ -12,10 +12,7 @@ RUN npm run build
 
 #Fase runtime, imagen más liviana
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
-
 COPY default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=builder --chown=nginx:nginx /app/dist/casino-frontend/browser/. /usr/share/nginx/html/
-
-#Exponemos el puerto por defecto del `ng serve` o.o
+USER nginx
 EXPOSE 8080
-
