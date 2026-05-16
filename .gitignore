@@ -9,3 +9,7 @@ dist
 .superpowers/
 CLAUDE.md
 docs/superpowers/
+
+#Variables de entorno
+.env
+
