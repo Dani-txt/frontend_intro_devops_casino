@@ -18,7 +18,7 @@ spec:
         - name: casino-frontend
         #El pipeline reemplaza :latest conel SHA del commit antes del apply
         #imagen del ecr 
-          image: <ACCOUNT_ID>.dkr.ecr<REGION>.amazonaws.com/casino-frontend:latest
+          image:image: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/casino-frontend:latest
           ports: 
             - containerPort: 8080
 

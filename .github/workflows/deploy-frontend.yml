@@ -7,8 +7,8 @@ on:
 
 env:
   AWS_REGION:   ${{ secrets.AWS_REGION }}
-  ECR_REPO:     casino-frontend
-  EKS_CLUSTER:  ${{ secrets.EKS_CLUSTER }}
+  ECR_REPO:     ${{ secrets.ECR_REPOSITORY }}     # antes: casino-frontend hardcodeado
+  EKS_CLUSTER:  ${{ secrets.EKS_CLUSTER_NAME }}   # antes: secrets.EKS_CLUSTER
   DEPLOY_NAME:  casino-frontend
 
 jobs:
