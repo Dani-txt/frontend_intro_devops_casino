@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: casino-frontend
+  labels:
+    app: casino-frontend
+spec:
+  type: LoadBalancer   # AWS crea un ELB público al aplicar este manifiesto
+  selector:
+    app: casino-frontend
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80          # puerto público
+      targetPort: 8080  # puerto del contenedor nginx
