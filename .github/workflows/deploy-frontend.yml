@@ -1,51 +1,81 @@
-name: Build & Deploy frontend
+name: Build & Deploy frontend → EKS
 
 on:
   workflow_dispatch:
   push:
     branches: [ deploy ]
 
+env:
+  AWS_REGION:   ${{ secrets.AWS_REGION }}
+  ECR_REPO:     casino-frontend
+  EKS_CLUSTER:  ${{ secrets.EKS_CLUSTER }}
+  DEPLOY_NAME:  casino-frontend
+
 jobs:
   build-push-deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region:            ${{ secrets.AWS_REGION }}
-      - id: ecr
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login en Amazon ECR
+        id: ecr
         uses: aws-actions/amazon-ecr-login@v2
         with:
           mask-password: 'true'
 
-      - name: Build & push frontend
+      # Build & Push (3 tags)
+      - name: Build & push imagen
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
+          SHA:      ${{ github.sha }}
         run: |
-          IMAGE=$REGISTRY/casino-frontend
-          docker build -t $IMAGE:${{ github.sha }} -t $IMAGE:latest .
-          docker push $IMAGE:${{ github.sha }}
+          IMAGE=$REGISTRY/$ECR_REPO
+          docker build \
+            -t $IMAGE:$SHA \
+            -t $IMAGE:latest \
+            .
+          docker push $IMAGE:$SHA
           docker push $IMAGE:latest
 
-      - name: Desplegar en EC2-frontend
-        uses: appleboy/ssh-action@v1
+      #Deploy en EKS
+      - name: Instalar kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
+
+      - name: Conectar kubectl al clúster
+        run: aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
+
+      - name: Actualizar imagen en deployment.yaml y aplicar manifiestos
         env:
-          IMAGE: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/casino-frontend:latest
-        with:
-          host: ${{ secrets.EC2_FRONTEND_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
-          envs: IMAGE
-          script: |
-            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
-              | docker login --username AWS --password-stdin \
-                ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
-            docker pull "$IMAGE"
-            docker rm -f casino-frontend || true
-            docker run -d --name casino-frontend --restart unless-stopped \
-              -p 80:80 \
-              -e BACKEND_HOST=${{ secrets.BACKEND_HOST_PRIVATE }} \
-              "$IMAGE"
+          REGISTRY:    ${{ steps.ecr.outputs.registry }}
+          ACCOUNT_ID:  ${{ secrets.AWS_ACCOUNT_ID }}
+          SHA:         ${{ github.sha }}
+        run: |
+          # Sustituir marcadores de Account ID / región / tag
+          sed -i \
+            "s|<ACCOUNT_ID>|$ACCOUNT_ID|g; \
+             s|<REGION>|$AWS_REGION|g; \
+             s|:latest|:$SHA|g" \
+            k8s/deployment.yaml
+
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/hpa.yaml
+
+      - name: Esperar rollout y mostrar estado
+        run: |
+          kubectl rollout status deployment/$DEPLOY_NAME --timeout=180s
+          kubectl get pods -l app=$DEPLOY_NAME -o wide
+          echo "=== URL pública del LoadBalancer (puede tardar 2-3 min) ==="
+          kubectl get svc casino-frontend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'; echo
