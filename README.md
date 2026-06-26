@@ -1,212 +1,406 @@
 # casino-frontend
 
-SPA Angular 17 (standalone components) del **Casino Online** —
-Experiencia 2 de la asignatura **Introducción a Herramientas DevOps (ISY1101)**.
+SPA desarrollada en **Angular 17** para **VidalCasino**, correspondiente a la **Evaluación Parcial 3 (EP3)** de la asignatura **Introducción a Herramientas DevOps (ISY1101)**.
 
-> **Este repositorio NO incluye `Dockerfile`, `docker-compose.yml`
-> ni workflows de GitHub Actions.** Esos artefactos forman parte del
-> entregable de la **Evaluación Parcial 2** y deben construirlos los
-> estudiantes.
+En esta versión la aplicación se despliega sobre **Amazon EKS (Kubernetes)**, utilizando **Docker**, **Amazon ECR**, **GitHub Actions** y **Nginx** como servidor web y reverse proxy.
 
 ---
 
-## Stack
+# Arquitectura
 
-| Capa | Tecnología |
-|------|-----------|
-| Framework | Angular 17 — standalone components, signals, lazy routes |
-| Lenguaje | TypeScript 5.4 |
-| Animaciones | GSAP 3, Three.js (WebGL) |
-| Estilos | CSS puro (design system Monaco Royal) |
-| Auth | JWT via HTTP interceptor |
-| Build | Angular application builder (Vite + esbuild) |
+```text
+                        Internet
+                            │
+                            ▼
+                 AWS LoadBalancer Service
+                            │
+                            ▼
+                 casino-frontend (Nginx)
+                            │
+       ┌────────────┬─────────────┬──────────────┬──────────────┐
+       ▼            ▼             ▼              ▼
+ casino-backend bonos-service apuestas-service estadisticas-service
+      :3000          :8004          :8005             :8006
+                    (Services ClusterIP)
 
----
-
-## Estructura del proyecto
-
+                            │
+                            ▼
+                       PostgreSQL
 ```
+
+El frontend es el único servicio expuesto públicamente mediante un **Service tipo LoadBalancer**. Los microservicios se comunican internamente mediante **ClusterIP** y nombres DNS del clúster.
+
+---
+
+# Stack
+
+| Capa                 | Tecnología              |
+| -------------------- | ----------------------- |
+| Framework            | Angular 17              |
+| Lenguaje             | TypeScript 5            |
+| Servidor Web         | Nginx                   |
+| Contenedores         | Docker                  |
+| Orquestación         | Kubernetes (Amazon EKS) |
+| Registro de imágenes | Amazon ECR              |
+| CI/CD                | GitHub Actions          |
+| Backend              | Node.js + Express       |
+| Base de datos        | PostgreSQL              |
+
+---
+
+# Estructura del proyecto
+
+```text
 casino-frontend/
+│
 ├── src/
-│   ├── index.html                        ← punto de entrada HTML
-│   ├── main.ts                           ← bootstrap standalone (sin NgModule)
-│   ├── styles.css                        ← design system global (variables CSS)
+│ 
+  ├── app/
+│   ├── assets/
 │   ├── environments/
-│   │   ├── environment.ts                ← dev: apiBaseUrl = http://localhost:3000
-│   │   └── environment.prod.ts           ← prod: apiBaseUrl = '' (reverse proxy)
-│   └── app/
-│       ├── app.component.ts              ← shell: Three.js bg + router outlet
-│       ├── app.routes.ts                 ← lazy loading de todos los componentes
-│       ├── models/casino.models.ts       ← interfaces TypeScript compartidas
-│       ├── utils/particles.ts            ← partículas Three.js al ganar
-│       ├── services/
-│       │   ├── auth.service.ts           ← signals: usuario, token, saldo
-│       │   └── casino.service.ts         ← llamadas HTTP a la API REST
-│       ├── interceptors/
-│       │   └── auth.interceptor.ts       ← añade JWT a cada request HTTP
-│       ├── guards/
-│       │   └── auth.guard.ts             ← protege rutas privadas
-│       └── components/
-│           ├── three-background/         ← canvas WebGL fijo (fondo 3D)
-│           ├── header/                   ← nav + saldo animado
-│           ├── login/   register/
-│           ├── lobby/                    ← catálogo de juegos
-│           ├── slots/                    ← tragamonedas con GSAP
-│           ├── roulette/                 ← ruleta SVG (37 segmentos europeos)
-│           ├── blackjack/                ← cartas CSS + flip 3D
-│           ├── profile/
-│           └── history/
-├── angular.json                          ← configuración del build
+│   └── styles.css
+│
+├── nginx/
+│   └── nginx.conf
+│
+├── kubernetes/
+│   ├── deployment.yaml
+│   ├── service.yaml
+│   └── hpa.yaml
+│
+├── .github/
+│   └── workflows/
+│       └── deploy.yml
+│
+├── Dockerfile
+├── .dockerignore
+├── angular.json
 ├── package.json
 ├── tsconfig.json
-├── tsconfig.app.json
-└── .gitignore
+└── README.md
 ```
 
 ---
 
-## Cómo funciona la app
+# Ejecución local
 
-### Autenticación
-- El usuario se registra/loguea. El backend devuelve un **JWT**.
-- `AuthService` guarda el token en `localStorage` usando Angular **signals**.
-- `authInterceptor` adjunta automáticamente `Authorization: Bearer <token>`
-  en cada petición HTTP saliente.
-- `authGuard` redirige a `/login` si no hay sesión activa.
-- Si el servidor responde con **401**, el interceptor cierra la sesión.
+## Requisitos
 
-### Rutas protegidas
-Todas las rutas de juego están protegidas por `authGuard`.
-Usan **lazy loading** (`loadComponent`): cada juego se descarga como
-chunk separado solo cuando el usuario navega a él.
+* Node.js 20 o superior
+* npm
+* Backend ejecutándose en `http://localhost:3000`
 
-### Comunicación con el backend
-`CasinoService` y `AuthService` leen `environment.apiBaseUrl` para
-construir las URLs. En **desarrollo** apunta a `localhost:3000`.
-En **producción** es cadena vacía → rutas relativas → nginx reverse proxy.
-
----
-
-## Variables de entorno y la estrategia de reverse proxy
-
-`src/environments/environment.prod.ts` usa `apiBaseUrl: ''` (vacío).
-Esto es **intencional**:
-
-```
-Navegador  →  /api/juegos  →  Nginx (mismo servidor)  →  Backend:3000
-```
-
-El JS del navegador llama a rutas relativas (`/api/...`). Nginx
-recibe esas llamadas y las reenvía al backend mediante `proxy_pass`.
-
-**¿Por qué no llamar directo al backend?**
-- El Security Group del backend solo acepta tráfico del SG del frontend.
-- Llamar desde el navegador activaría CORS (el origen del navegador
-  es el IP del usuario, no del frontend EC2).
-- El reverse proxy centraliza todo en un solo punto de entrada (puerto 80).
-
-En **desarrollo local** (`environment.ts`) sí se usa `http://localhost:3000`
-porque ambos procesos corren en la misma máquina.
-
----
-
-## Correr en local (sin Docker)
-
-Requisito: backend corriendo en `http://localhost:3000`.
+## Instalar dependencias
 
 ```bash
 npm install
-npm start          # ng serve — http://localhost:4200
 ```
 
----
-
-## Build de producción
+## Ejecutar la aplicación
 
 ```bash
-npm run build      # ng build --configuration production
+npm start
 ```
 
-### Ruta de salida — IMPORTANTE para el Dockerfile
-
-Angular 17 usa el nuevo **application builder** (Vite + esbuild).
-El artefacto final queda en:
+La aplicación estará disponible en:
 
 ```
+http://localhost:4200
+```
+
+---
+
+# Build de producción
+
+```bash
+npm run build
+```
+
+Angular genera el build en:
+
+```text
 dist/
 └── casino-frontend/
-    └── browser/          ← aquí están los archivos estáticos (HTML, JS, CSS)
-        ├── index.html
-        ├── main-HASH.js
-        └── chunk-HASH.js (uno por componente lazy)
+    └── browser/
 ```
 
-> En el `COPY` del Dockerfile deben apuntar a
-> `dist/casino-frontend/browser`, **no** a `dist/casino-frontend`.
-> Con Angular < 17 era la carpeta raíz; desde la v17 con el nuevo
-> builder hay una subcarpeta `browser/` extra.
+Esta carpeta es utilizada por el Dockerfile para copiar los archivos estáticos hacia Nginx.
 
 ---
 
-## Lo que deben construir (EP2)
+# Docker
 
-### 1. `Dockerfile` multi-stage
+## Construir la imagen
 
-Deben escribir un Dockerfile que compile la SPA con Node y la sirva con Nginx.
+```bash
+docker build -t casino-frontend .
+```
 
-Consideraciones clave:
-- Usar un **build multi-stage** para no incluir `node_modules` en la imagen final.
-- El comando de build es `npm run build` (ejecuta `ng build --configuration production`).
-- **Angular 17 genera los archivos en `dist/casino-frontend/browser/`**, no en `dist/casino-frontend/`. Esta subcarpeta extra es nueva desde v17 con el application builder — es un error común al escribir el `COPY` del Dockerfile.
-- El servidor web debe escuchar en el puerto 80.
+## Ejecutar el contenedor
 
-### 2. Configuración de Nginx
+```bash
+docker run -p 80:8080 casino-frontend
+```
 
-Nginx debe cumplir dos funciones:
-- **Servidor estático** para los archivos de la SPA.
-- **Reverse proxy** para reenviar `/api/` al backend (puerto 3000).
+Acceder desde:
 
-Puntos críticos de la configuración:
-- **SPA fallback**: Angular maneja el routing en el navegador. Si el usuario recarga la página directamente en `/lobby` o `/slots`, Nginx buscará un archivo con ese nombre, no lo encontrará y devolverá 404. Se necesita una directiva que sirva `index.html` como fallback para cualquier ruta que no corresponda a un archivo real.
-- **Reverse proxy**: las llamadas a `/api/` deben reenviarse al backend. En `environment.prod.ts` el `apiBaseUrl` es cadena vacía, por lo que el JS del navegador hace llamadas relativas (`/api/juegos`, etc.) que Nginx intercepta y reenvía.
-
-### 3. `docker-compose.yml`
-
-Deben orquestar los servicios `db`, `casino-backend` y `casino-frontend` en una misma red interna, definiendo dependencias, puertos y variables de entorno necesarias.
-
-### 4. Workflow CI/CD (`.github/workflows/deploy.yml`)
-
-El workflow debe ejecutarse en push a la rama `deploy` y contemplar:
-- Build y push de la imagen a un registry (Docker Hub o ECR).
-- Deploy en la instancia EC2 vía SSH.
-
-Lean la pauta oficial (`EP2_Instrucciones y Pauta_Encargo_Estudiante.pdf`) para los criterios de evaluación completos.
+```
+http://localhost
+```
 
 ---
 
-## Dependencias notables
+# Configuración de Nginx
 
-| Paquete | Versión | Para qué se usa |
-|---------|---------|-----------------|
-| `@angular/core` | ^17.3 | Framework principal |
-| `gsap` | ^3.15 | Animaciones UI (GSAP timelines, eases) |
-| `three` | ^0.184 | Fondo WebGL con naipes 3D y partículas |
-| `@types/three` | ^0.184 | TypeScript types para Three.js |
-| `rxjs` | ~7.8 | Observables para HTTP y reactividad |
-| `zone.js` | ~0.14 | Detección de cambios de Angular |
+Nginx cumple dos funciones principales.
+
+## Servidor estático
+
+Entrega la aplicación Angular generada durante el proceso de build.
+
+## Reverse Proxy
+
+Todas las solicitudes hacia:
+
+```text
+/api/*
+```
+
+son redireccionadas al backend correspondiente mediante los nombres DNS internos del clúster.
+
+Ejemplo:
+
+```text
+/api/login
+            ↓
+casino-backend:3000
+
+/api/bonos
+            ↓
+bonos-service:8004
+
+/api/apuestas
+            ↓
+apuestas-service:8005
+
+/api/estadisticas
+            ↓
+estadisticas-service:8006
+```
+
+Además, Nginx implementa el **SPA Fallback** mediante:
+
+```nginx
+try_files $uri $uri/ /index.html;
+```
+
+permitiendo refrescar cualquier ruta de Angular sin obtener un error 404.
 
 ---
 
-## Notas de arquitectura para la EP2
+# Kubernetes
 
-- **Standalone components**: no hay `NgModule`. La configuración global
-  (router, HTTP client, interceptors) está en `main.ts` con `provideRouter`
-  y `provideHttpClient`.
-- **Signals**: `AuthService` usa `signal()` y `computed()` de Angular 17
-  en lugar de `BehaviorSubject`. Los componentes leen los signals
-  directamente en el template: `{{ auth.usuario()?.username }}`.
-- **Lazy loading**: cada ruta carga su componente solo cuando se visita
-  (`loadComponent`). Esto reduce el bundle inicial y mejora el LCP.
-- **Three.js fuera de NgZone**: el loop de animación corre en
-  `ngZone.runOutsideAngular()` para no disparar detección de cambios
-  en cada frame de requestAnimationFrame.
+El frontend se despliega mediante un **Deployment** y un **Service tipo LoadBalancer**.
+
+Los manifiestos incluyen:
+
+* Deployment
+* Service
+* Horizontal Pod Autoscaler (HPA)
+* Requests y Limits de CPU
+* Variables de entorno mediante ConfigMap y Secret
+
+Despliegue:
+
+```bash
+kubectl apply -f kubernetes/
+```
+
+Verificar recursos:
+
+```bash
+kubectl get deployments
+kubectl get pods
+kubectl get svc
+kubectl get hpa
+```
+
+---
+
+# Variables de entorno
+
+## Desarrollo
+
+```ts
+apiBaseUrl = "http://localhost:3000";
+```
+
+## Producción
+
+```ts
+apiBaseUrl = "";
+```
+
+Al utilizar una URL vacía, Angular realiza llamadas relativas como:
+
+```text
+/api/login
+```
+
+Las cuales son interceptadas por Nginx y reenviadas al backend correspondiente.
+
+---
+
+# Pipeline CI/CD
+
+El despliegue está automatizado mediante **GitHub Actions**.
+
+El workflow se ejecuta automáticamente al realizar un **push** sobre la rama:
+
+```text
+deploy
+```
+
+## Flujo del pipeline
+
+```text
+Push
+
+↓
+
+Build Angular
+
+↓
+
+Docker Build
+
+↓
+
+Push a Amazon ECR
+
+↓
+
+Deploy a Amazon EKS
+```
+
+Cada imagen Docker es publicada con tres etiquetas:
+
+* `latest`
+* `${{ github.sha }}`
+* `vX.Y.Z`
+
+---
+
+# Autoescalado
+
+El proyecto utiliza un **Horizontal Pod Autoscaler (HPA)**.
+
+Configuración utilizada:
+
+* CPU objetivo: 50%
+* Réplicas mínimas: 2
+* Réplicas máximas: 6
+
+Cuando aumenta la carga de trabajo, Kubernetes incrementa automáticamente el número de Pods.
+
+---
+
+# Recuperación automática
+
+Los Deployments garantizan la alta disponibilidad del sistema.
+
+Ejemplo:
+
+```bash
+kubectl delete pod <nombre-del-pod>
+```
+
+Kubernetes detecta la eliminación del Pod y crea uno nuevo automáticamente.
+
+---
+
+# Integración
+
+Flujo general de la aplicación:
+
+```text
+Usuario
+
+↓
+
+Frontend Angular
+
+↓
+
+Nginx
+
+↓
+
+Microservicios
+
+↓
+
+PostgreSQL
+```
+
+Toda la comunicación entre servicios se realiza mediante la red interna del clúster utilizando **Services ClusterIP**.
+
+---
+
+# Repositorios relacionados
+
+* casino-backend
+* bonos-service
+* apuestas-service
+* estadisticas-service
+
+Cada repositorio contiene:
+
+* Dockerfile
+* Workflow GitHub Actions
+* Deployment Kubernetes
+* Service Kubernetes
+
+---
+
+# Comandos útiles
+
+## Ver Pods
+
+```bash
+kubectl get pods
+```
+
+## Ver Servicios
+
+```bash
+kubectl get svc
+```
+
+## Ver HPA
+
+```bash
+kubectl get hpa
+```
+
+## Ver logs
+
+```bash
+kubectl logs <pod>
+```
+
+## Reiniciar Deployment
+
+```bash
+kubectl rollout restart deployment casino-frontend
+```
+
+---
+
+# Autores
+
+**Evaluación Parcial 3**
+
+Introducción a Herramientas DevOps
+
+ISY1101
