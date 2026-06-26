@@ -16,8 +16,8 @@ spec:
     spec:
       containers:
         - name: casino-frontend
-        #El pipeline reemplaza :latest conel SHA del commit antes del apply
-        #imagen del ecr 
+        # Durante el pipeline de GitHub Actions, la etiqueta :latest se reemplaza
+# por el SHA del commit para desplegar una imagen inmutable y trazable.
           image: 248357130561.dkr.ecr.us-east-1.amazonaws.com/casino-frontend:latest
           ports: 
             - containerPort: 8080
