@@ -5,7 +5,7 @@ metadata:
   labels:
     app: casino-frontend
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: casino-frontend
