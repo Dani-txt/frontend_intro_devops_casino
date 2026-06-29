@@ -44,3 +44,20 @@ modo CI (sin ventana ni watch):
 npm ci
 npm test -- --watch=false --browsers=ChromeHeadless
 ```
+
+## Qué debes hacer en este repo (Entrega ET)
+Trabaja en tu **fork**, con ramas `dev` (trabajo) y `deploy` (gatilla el pipeline).
+
+1. **Integrar las pruebas al pipeline (obligatorio):** este repo **ya trae pruebas**
+   (`npm ci && npm test -- --watch=false --browsers=ChromeHeadless`). Agrégalas como
+   etapa que **bloquea el deploy** si fallan: build → **test** → push ECR → deploy EKS.
+2. **Dockerfile** que compile la SPA (`npm run build`) y la sirva con **nginx**.
+3. **nginx**: servir la SPA (con *fallback* de rutas para que el routing de Angular
+   no dé 404 al recargar) y hacer **reverse proxy** de `/api/*` hacia los backends
+   por el DNS interno del clúster.
+4. **Manifiestos de Kubernetes**: `Deployment` + `Service` tipo **LoadBalancer**
+   (es el **único** componente expuesto a Internet).
+5. **Workflow CI/CD** gatillado por `deploy` (con etapa de *test*), **HPA** y
+   autorecuperación de pods.
+
+> Transversal (clúster, una sola vez): **Prometheus + Grafana** y el **video**.
